@@ -16,7 +16,6 @@ import {SelectValueObserver} from './select-value-observer';
 import {CheckedObserver} from './checked-observer';
 import {
   ValueAttributeObserver,
-  XLinkAttributeObserver,
   DataAttributeObserver,
   StyleObserver,
   dataAttributeAccessor
@@ -27,6 +26,8 @@ import {
   createComputedObserver
 } from './computed-observation';
 import {SVGAnalyzer} from './svg';
+
+import {View} from 'tns-core-modules/ui/core/view';
 
 export class ObserverLocator {
   static inject = [TaskQueue, EventManager, DirtyChecker, SVGAnalyzer, Parser];
@@ -81,20 +82,20 @@ export class ObserverLocator {
     return value;
   }
 
-  addAdapter(adapter: ObjectObservationAdapter) {
-    this.adapters.push(adapter);
-  }
+  // addAdapter(adapter: ObjectObservationAdapter) {
+  //   this.adapters.push(adapter);
+  // }
 
-  getAdapterObserver(obj, propertyName, descriptor) {
-    for (let i = 0, ii = this.adapters.length; i < ii; i++) {
-      let adapter = this.adapters[i];
-      let observer = adapter.getObserver(obj, propertyName, descriptor);
-      if (observer) {
-        return observer;
-      }
-    }
-    return null;
-  }
+  // getAdapterObserver(obj, propertyName, descriptor) {
+  //   for (let i = 0, ii = this.adapters.length; i < ii; i++) {
+  //     let adapter = this.adapters[i];
+  //     let observer = adapter.getObserver(obj, propertyName, descriptor);
+  //     if (observer) {
+  //       return observer;
+  //     }
+  //   }
+  //   return null;
+  // }
 
   createPropertyObserver(obj, propertyName) {
     let descriptor;
@@ -106,114 +107,96 @@ export class ObserverLocator {
     }
 
     if (obj instanceof DOM.Element) {
-      if (propertyName === 'class') {
-        return new ClassObserver(obj);
+      let metadata = DOM.getViewMetadata(obj.nodeName);
+      let observableProperties = metadata.observableProperties;
+      let event = observableProperties[propertyName];
+      if (!event) {
+        throw new Error(`${propertyName} of ${obj.nodeName} is not observable.`);
       }
-      if (propertyName === 'style' || propertyName === 'css') {
-        return new StyleObserver(obj, propertyName);
-      }
-      handler = this.eventManager.getElementHandler(obj, propertyName);
-      if (propertyName === 'value' && obj.tagName.toLowerCase() === 'select') {
-        return new SelectValueObserver(obj, handler, this);
-      }
-      if (propertyName === 'checked' && obj.tagName.toLowerCase() === 'input') {
-        return new CheckedObserver(obj, handler, this);
-      }
-      if (handler) {
-        return new ValueAttributeObserver(obj, propertyName, handler);
-      }
-      xlinkResult = /^xlink:(.+)$/.exec(propertyName);
-      if (xlinkResult) {
-        return new XLinkAttributeObserver(obj, propertyName, xlinkResult[1]);
-      }
-      if (propertyName === 'role' && (obj instanceof DOM.Element || obj instanceof DOM.SVGElement)
-        || /^\w+:|^data-|^aria-/.test(propertyName)
-        || obj instanceof DOM.SVGElement && this.svgAnalyzer.isStandardSvgAttribute(obj.nodeName, propertyName)) {
-        return new DataAttributeObserver(obj, propertyName);
-      }
+      obj.addEventListener(event, function callback() {}, /*thisArg*/ obj);
     }
 
-    descriptor = Object.getPropertyDescriptor(obj, propertyName);
+    // descriptor = Object.getPropertyDescriptor(obj, propertyName);
 
-    if (hasDeclaredDependencies(descriptor)) {
-      return createComputedObserver(obj, propertyName, descriptor, this);
-    }
+    // if (hasDeclaredDependencies(descriptor)) {
+    //   return createComputedObserver(obj, propertyName, descriptor, this);
+    // }
 
-    if (descriptor) {
-      const existingGetterOrSetter = descriptor.get || descriptor.set;
-      if (existingGetterOrSetter) {
-        if (existingGetterOrSetter.getObserver) {
-          return existingGetterOrSetter.getObserver(obj);
-        }
+    // if (descriptor) {
+    //   const existingGetterOrSetter = descriptor.get || descriptor.set;
+    //   if (existingGetterOrSetter) {
+    //     if (existingGetterOrSetter.getObserver) {
+    //       return existingGetterOrSetter.getObserver(obj);
+    //     }
 
-        // attempt to use an adapter before resorting to dirty checking.
-        let adapterObserver = this.getAdapterObserver(obj, propertyName, descriptor);
-        if (adapterObserver) {
-          return adapterObserver;
-        }
-        return new DirtyCheckProperty(this.dirtyChecker, obj, propertyName);
-      }
-    }
+    //     // attempt to use an adapter before resorting to dirty checking.
+    //     let adapterObserver = this.getAdapterObserver(obj, propertyName, descriptor);
+    //     if (adapterObserver) {
+    //       return adapterObserver;
+    //     }
+    //     return new DirtyCheckProperty(this.dirtyChecker, obj, propertyName);
+    //   }
+    // }
 
-    if (obj instanceof Array) {
-      if (propertyName === 'length') {
-        return this.getArrayObserver(obj).getLengthObserver();
-      }
+    // if (obj instanceof Array) {
+    //   if (propertyName === 'length') {
+    //     return this.getArrayObserver(obj).getLengthObserver();
+    //   }
 
-      return new DirtyCheckProperty(this.dirtyChecker, obj, propertyName);
-    } else if (obj instanceof Map) {
-      if (propertyName === 'size') {
-        return this.getMapObserver(obj).getLengthObserver();
-      }
+    //   return new DirtyCheckProperty(this.dirtyChecker, obj, propertyName);
+    // } else if (obj instanceof Map) {
+    //   if (propertyName === 'size') {
+    //     return this.getMapObserver(obj).getLengthObserver();
+    //   }
 
-      return new DirtyCheckProperty(this.dirtyChecker, obj, propertyName);
-    } else if (obj instanceof Set) {
-      if (propertyName === 'size') {
-        return this.getSetObserver(obj).getLengthObserver();
-      }
+    //   return new DirtyCheckProperty(this.dirtyChecker, obj, propertyName);
+    // } else if (obj instanceof Set) {
+    //   if (propertyName === 'size') {
+    //     return this.getSetObserver(obj).getLengthObserver();
+    //   }
 
-      return new DirtyCheckProperty(this.dirtyChecker, obj, propertyName);
-    }
+    //   return new DirtyCheckProperty(this.dirtyChecker, obj, propertyName);
+    // }
 
-    return new SetterObserver(this.taskQueue, obj, propertyName);
+    // return new SetterObserver(this.taskQueue, obj, propertyName);
   }
 
   getAccessor(obj, propertyName) {
-    if (obj instanceof DOM.Element) {
-      if (propertyName === 'class'
-        || propertyName === 'style' || propertyName === 'css'
-        || propertyName === 'value' && (obj.tagName.toLowerCase() === 'input' || obj.tagName.toLowerCase() === 'select')
-        || propertyName === 'checked' && obj.tagName.toLowerCase() === 'input'
-        || propertyName === 'model' && obj.tagName.toLowerCase() === 'input'
-        || /^xlink:.+$/.exec(propertyName)) {
-        return this.getObserver(obj, propertyName);
-      }
-      if (/^\w+:|^data-|^aria-/.test(propertyName)
-        || obj instanceof DOM.SVGElement && this.svgAnalyzer.isStandardSvgAttribute(obj.nodeName, propertyName)
-        || obj.tagName.toLowerCase() === 'img' && propertyName === 'src'
-        || obj.tagName.toLowerCase() === 'a' && propertyName === 'href'
-      ) {
-        return dataAttributeAccessor;
-      }
-    }
-    return propertyAccessor;
+    // if (obj instanceof DOM.Element) {
+    //   if (propertyName === 'class'
+    //     || propertyName === 'style' || propertyName === 'css'
+    //     || propertyName === 'value' && (obj.tagName.toLowerCase() === 'input' || obj.tagName.toLowerCase() === 'select')
+    //     || propertyName === 'checked' && obj.tagName.toLowerCase() === 'input'
+    //     || propertyName === 'model' && obj.tagName.toLowerCase() === 'input'
+    //     || /^xlink:.+$/.exec(propertyName)) {
+    //     return this.getObserver(obj, propertyName);
+    //   }
+    //   if (/^\w+:|^data-|^aria-/.test(propertyName)
+    //     || obj instanceof DOM.SVGElement && this.svgAnalyzer.isStandardSvgAttribute(obj.nodeName, propertyName)
+    //     || obj.tagName.toLowerCase() === 'img' && propertyName === 'src'
+    //     || obj.tagName.toLowerCase() === 'a' && propertyName === 'href'
+    //   ) {
+    //     return dataAttributeAccessor;
+    //   }
+    // }
+    // return propertyAccessor;
   }
 
-  getArrayObserver(array) {
-    return getArrayObserver(this.taskQueue, array);
-  }
+  // getArrayObserver(array) {
+  //   return getArrayObserver(this.taskQueue, array);
+  // }
 
-  getMapObserver(map) {
-    return getMapObserver(this.taskQueue, map);
-  }
+  // getMapObserver(map) {
+  //   return getMapObserver(this.taskQueue, map);
+  // }
 
-  getSetObserver(set) {
-    return getSetObserver(this.taskQueue, set);
-  }
+  // getSetObserver(set) {
+  //   return getSetObserver(this.taskQueue, set);
+  // }
 }
 
-export class ObjectObservationAdapter {
-  getObserver(object, propertyName, descriptor) {
-    throw new Error('BindingAdapters must implement getObserver(object, propertyName).');
-  }
-}
+// export class ObjectObservationAdapter {
+//   getObserver(object, propertyName, descriptor) {
+//     throw new Error('BindingAdapters must implement getObserver(object, propertyName).');
+//   }
+// }
